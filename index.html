@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Rhythm Tap — a free 4-lane rhythm game with fully synthesized music. Tap falling beats on the line, keep the combo alive and chase SSS.">
+<title>Rhythm Tap · 4-Lane Beat Tapper</title>
+<script>
+// 平台 SDK 按域名条件加载（独立运行时完全不加载，游戏行为不变）
+(function () {
+  var host = location.hostname || "";
+  try {
+    if (host.indexOf("crazygames") !== -1) {
+      var s1 = document.createElement("script");
+      s1.src = "https://sdk.crazygames.com/crazygames-sdk-v3.js";
+      s1.onload = function () {
+        if (window.CrazyGames && window.CrazyGames.SDK) {
+          window.CrazyGames.SDK.init().then(function () {
+            try { window.CrazyGames.SDK.game.loadingStart(); } catch (e) {}
+            window.addEventListener("load", function () { try { window.CrazyGames.SDK.game.loadingStop(); } catch (e) {} });
+          }).catch(function () {});
+        }
+      };
+      document.head.appendChild(s1);
+      window.__portal = "crazygames";
+    } else if (host.indexOf("gamedistribution") !== -1 || host.indexOf("html5.gamedistribution.com") !== -1 || host.indexOf("gd.games") !== -1) {
+      var s2 = document.createElement("script");
+      s2.src = "https://sdk.gamedistribution.com/v2/main.min.js";
+      document.head.appendChild(s2);
+      window.__portal = "gamedistribution";
+    }
+  } catch (e) {}
+})();
+</script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; }
+  html,body { height:100%; overflow:hidden; background:#05050c; font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; }
+  body { display:flex; align-items:center; justify-content:center; }
+  #stage { position:relative; }
+  canvas { display:block; border-radius:12px; touch-action:none; background:#0a0a18; }
+  #overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(5,5,14,.74); backdrop-filter:blur(3px); z-index:5; border-radius:12px; }
+  .panel { width:88%; max-width:400px; max-height:94%; overflow-y:auto; background:#12122a; border:1px solid #2c2c58; border-radius:18px; padding:22px 22px 18px; text-align:center; color:#fff; }
+  .panel h1 { font-size:30px; font-weight:900; letter-spacing:5px; color:#fff; text-shadow:0 0 18px rgba(34,224,255,.55); }
+  .panel .sub { color:#9a9ac0; font-size:12px; line-height:1.5; margin:8px 0 14px; }
+  #songList { margin:0 0 12px; }
+  .song { display:block; width:100%; margin:8px 0; padding:10px 12px; border-radius:12px; background:linear-gradient(180deg,#1a1a38,#141430); border:1px solid #2c2c58; color:#fff; cursor:pointer; text-align:left; }
+  .song:active { transform:scale(.98); }
+  .song .sName { display:block; font-size:16px; font-weight:800; letter-spacing:1px; }
+  .song .sMeta { display:block; font-size:11px; color:#8a8ac0; margin-top:2px; }
+  .song .sBest { display:block; font-size:11px; color:#ffd76a; margin-top:2px; }
+  .hint { color:#6a6a8e; font-size:11px; line-height:1.7; }
+  .rTitle { color:#9a9ac0; font-size:12px; letter-spacing:3px; margin-bottom:4px; }
+  #rGrade { font-size:64px; font-weight:900; line-height:1.1; }
+  #rNew { display:none; color:#ffd76a; font-size:12px; font-weight:800; letter-spacing:2px; margin:4px 0; animation:blink 1s infinite; }
+  @keyframes blink { 50% { opacity:.35; } }
+  .rScore { font-size:30px; font-weight:900; color:#fff; margin:6px 0 12px; }
+  .rGrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:14px; }
+  .rGrid .cell { background:#1a1a38; border:1px solid #2c2c58; border-radius:8px; padding:6px 2px; }
+  .rGrid .cell span { display:block; font-size:9px; color:#8a8ac0; letter-spacing:1px; }
+  .rGrid .cell b { display:block; font-size:15px; margin-top:2px; }
+  .btnRow { display:flex; gap:10px; justify-content:center; }
+  .btn { background:linear-gradient(135deg,#5b6cff,#8a5bff); color:#fff; border:none; border-radius:12px; padding:11px 26px; font-size:14px; font-weight:800; cursor:pointer; }
+  .btn:active { transform:scale(.97); }
+  .btn.ghost { background:#1a1a38; border:1px solid #2c2c58; }
+  #muteBtn { position:absolute; top:8px; right:8px; z-index:8; background:rgba(18,18,42,.85); border:1px solid #2c2c58; color:#cfd2ff; border-radius:10px; padding:6px 10px; font-size:11px; font-weight:700; cursor:pointer; }
+  #exitBtn { position:absolute; bottom:8px; left:8px; z-index:8; display:none; background:rgba(18,18,42,.85); border:1px solid #2c2c58; color:#cfd2ff; border-radius:10px; padding:6px 10px; font-size:11px; font-weight:700; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+  <button id="muteBtn">SOUND ON</button>
+  <button id="exitBtn">&#10005; EXIT</button>
+  <div id="overlay">
+    <div class="panel" id="menuPanel">
+      <h1>RHYTHM TAP</h1>
+      <p class="sub">Tap the beats as they cross the line.<br>PERFECT &middot; GREAT &middot; GOOD &mdash; keep the combo alive!</p>
+      <div id="songList"></div>
+      <p class="hint">KEYS&nbsp; D F J K &nbsp;or&nbsp; &#8592; &#8595; &#8593; &#8594;<br>TOUCH&nbsp; tap the 4 lanes &middot; M = mute &middot; ESC = quit</p>
+    </div>
+    <div class="panel" id="resultPanel" style="display:none">
+      <p class="rTitle">SONG CLEAR!</p>
+      <div id="rGrade">S</div>
+      <div id="rNew">NEW BEST!</div>
+      <div class="rScore" id="rScore">0</div>
+      <div class="rGrid" id="rGrid"></div>
+      <div class="btnRow">
+        <button class="btn" id="retryBtn">RETRY</button>
+        <button class="btn ghost" id="menuBtn">SONGS</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+/* ================= 可测核心（纯逻辑，仅依赖 Math） ================= */
+/*__RT_CORE__*/
+var RT_WINDOWS = [50, 100, 150];   // PERFECT/GREAT/GOOD 判定窗（毫秒，±对称）
+var RT_SCORES = [100, 50, 20];     // 对应单音符得分
+var RT_MIN_GAP_MS = 120;           // 谱面音符最小间隔（不重叠，可玩性下限）
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function RT_judgeOf(absMs) {
+  if (absMs <= RT_WINDOWS[0]) return 0;
+  if (absMs <= RT_WINDOWS[1]) return 1;
+  if (absMs <= RT_WINDOWS[2]) return 2;
+  return -1;
+}
+function RT_gradeOf(acc) {
+  return acc >= 98 ? "SSS" : acc >= 94 ? "SS" : acc >= 88 ? "S" : acc >= 78 ? "A" : acc >= 60 ? "B" : "C";
+}
+
+// 三首曲子：BPM / 音阶 / 贝斯走向 / 主奏音色 / 密度基数 / 下落时长 各不相同
+// measures ≈ bpm/4 → 每首时长 ≈ 60 秒
+var RT_SONGS = [
+  { id: "calm", name: "Calm Waters", diff: "EASY", bpm: 90, measures: 22, approach: 1.7, seed: 101, den: 0.85, lead: "triangle",
+    scale: [57, 60, 62, 64, 67, 69, 72, 74, 76, 79], bass: [45, 41, 36, 43] },
+  { id: "groove", name: "Neon Groove", diff: "NORMAL", bpm: 115, measures: 29, approach: 1.45, seed: 202, den: 1.0, lead: "square",
+    scale: [64, 67, 69, 71, 74, 76, 79, 81, 83, 86], bass: [40, 36, 45, 43] },
+  { id: "frenzy", name: "Frenzy Circuit", diff: "HARD", bpm: 140, measures: 35, approach: 1.22, seed: 303, den: 1.0, lead: "sawtooth",
+    scale: [60, 61, 63, 65, 67, 68, 70, 72, 73, 75], bass: [36, 43, 44, 46] }
+];
+
+// 谱面与主旋律同源生成：同一 beat 网格、同一随机种子（确定性，公平冲榜）。
+// 网格 = 8 分音符；140bpm 的 16 分音符只有 107ms（< 120ms 最小间隔），故全部曲目统一 8 分网格。
+// 音符间隔 ≥ 8 分（calm 333ms / groove 261ms / frenzy 214ms），自动满足 ≥120ms 且不重叠。
+function RT_buildChart(song) {
+  var spb = 60 / song.bpm;
+  var lenBeats = song.measures * 4;
+  var steps = lenBeats * 2;
+  var rnd = mulberry32(song.seed);
+  var notes = [], deg = 2;
+  for (var i = 0; i < steps; i++) {
+    var beat = i * 0.5;
+    if (beat < 4) continue;                     // 首小节纯鼓点导入，不出音符
+    var prog = beat / lenBeats;
+    var intensity = 0.45 + 0.55 * prog;         // 难度曲线：密度随进度上升
+    var wave = 0.5 + 0.5 * Math.sin(beat * Math.PI / 4);  // 每 8 拍起伏，避免匀速流水
+    if (rnd() < song.den * intensity * (0.6 + 0.4 * wave)) {
+      deg += (rnd() < 0.5 ? -1 : 1) * (1 + Math.floor(rnd() * 2));
+      if (deg < 0) deg += 3; else if (deg >= song.scale.length) deg -= 3;
+      notes.push({ beat: beat, lane: ((deg % 4) + 4) % 4, midi: song.scale[deg] });
+    }
+  }
+  return { notes: notes, lengthBeats: lenBeats, spb: spb };
+}
+/*__RT_CORE_END__*/
+
+/* ================= 画布与自适应（竖屏优先） ================= */
+var W = 480, H = 720, LANES = 4;
+var LANE_W = W / LANES;
+var HIT_Y = 590;                                // 判定线
+var LANE_COLORS = ["#22e0ff", "#ff2fd6", "#ffd23f", "#7cff6b"];
+var KEYS = ["D", "F", "J", "K"];
+var GRADE_COLORS = { SSS: "#ffd76a", SS: "#7cff6b", S: "#22e0ff", A: "#8a9bff", B: "#c9c9de", C: "#8a8aa8" };
+var canvas = document.getElementById("game");
+var ctx = canvas.getContext("2d");
+var dpr = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = W * dpr; canvas.height = H * dpr;
+ctx.scale(dpr, dpr);
+var exitBtn = document.getElementById("exitBtn");
+var muteBtn = document.getElementById("muteBtn");
+var overlay = document.getElementById("overlay");
+var menuPanel = document.getElementById("menuPanel");
+var resultPanel = document.getElementById("resultPanel");
+
+function fit() {
+  var s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  var cw = Math.floor(W * s), ch = Math.floor(H * s);
+  var st = document.getElementById("stage");
+  st.style.width = cw + "px"; st.style.height = ch + "px";
+  canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
+}
+window.addEventListener("resize", fit);
+window.addEventListener("orientationchange", fit);
+fit();
+
+function storeGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function storeSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+/* ================= 游戏状态 ================= */
+var state = "MENU";            // MENU | PLAY | PAUSED | RESULT
+var songIdx = 0, song = null, chart = null;
+var notes = [], laneNotes = [[], [], [], []], lanePtr = [0, 0, 0, 0];
+var events = [], evIdx = 0, songStart = 0, songDur = 0, clockPerf = false;
+var score = 0, combo = 0, maxCombo = 0, counts = [0, 0, 0, 0], comboPop = 0;
+var lanePressed = [0, 0, 0, 0], laneGlow = [0, 0, 0, 0], laneBeam = [0, 0, 0, 0];
+var ripples = [], floats = [];
+var muted = storeGet("rt_muted") === "1";
+var schedTimer = 0;
+var LEAD = 1.35;               // 点击到音乐开始的缓冲（秒），期间显示 GET READY
+
+/* ================= WebAudio：合成器（音乐与音效同一上下文） ================= */
+var actx = null, master = null, musicGain = null, sfxGain = null, analyser = null, songBus = null, noiseBuf = null;
+var specData = null;
+
+function ensureAudio() {
+  if (actx) { try { if (actx.state === "suspended" && state !== "PAUSED") actx.resume(); } catch (e) {} return; }
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try { actx = new AC(); } catch (e) { return; }
+  master = actx.createGain();
+  musicGain = actx.createGain(); musicGain.gain.value = 0.9;
+  sfxGain = actx.createGain(); sfxGain.gain.value = 0.9;
+  analyser = actx.createAnalyser(); analyser.fftSize = 128; analyser.smoothingTimeConstant = 0.82;
+  specData = new Uint8Array(analyser.frequencyBinCount);
+  master.gain.value = muted ? 0 : 1;
+  musicGain.connect(master); sfxGain.connect(master);
+  master.connect(analyser); analyser.connect(actx.destination);
+  noiseBuf = actx.createBuffer(1, Math.floor(actx.sampleRate), actx.sampleRate);
+  var d = noiseBuf.getChannelData(0);
+  for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+
+function kick(t) {
+  if (!actx) return;
+  try {
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.connect(g); g.connect(songBus);
+    o.start(t); o.stop(t + 0.3);
+  } catch (e) {}
+}
+function snare(t) {
+  if (!actx) return;
+  try {
+    var s = actx.createBufferSource(); s.buffer = noiseBuf;
+    var f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 1800; f.Q.value = 0.8;
+    var g = actx.createGain();
+    g.gain.setValueAtTime(0.45, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    s.connect(f); f.connect(g); g.connect(songBus);
+    s.start(t); s.stop(t + 0.2);
+    var o = actx.createOscillator(), g2 = actx.createGain();
+    o.type = "triangle"; o.frequency.value = 190;
+    g2.gain.setValueAtTime(0.22, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g2); g2.connect(songBus);
+    o.start(t); o.stop(t + 0.1);
+  } catch (e) {}
+}
+function hat(t, open) {
+  if (!actx) return;
+  try {
+    var dur = open ? 0.25 : 0.05;
+    var s = actx.createBufferSource(); s.buffer = noiseBuf;
+    var f = actx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7000;
+    var g = actx.createGain();
+    g.gain.setValueAtTime(0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); g.connect(songBus);
+    s.start(t); s.stop(t + dur + 0.02);
+  } catch (e) {}
+}
+function bassN(t, midi, dur) {
+  if (!actx) return;
+  try {
+    var o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain();
+    o.type = song.id === "calm" ? "triangle" : "sawtooth";
+    o.frequency.value = midiHz(midi);
+    f.type = "lowpass"; f.frequency.value = song.id === "frenzy" ? 950 : 650;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.32, t + 0.015);
+    g.gain.setValueAtTime(0.32, t + Math.max(0.03, dur * 0.6));
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(f); f.connect(g); g.connect(songBus);
+    o.start(t); o.stop(t + dur + 0.05);
+  } catch (e) {}
+}
+function leadN(t, midi, dur) {
+  if (!actx) return;
+  try {
+    var g = actx.createGain(), f = actx.createBiquadFilter();
+    f.type = "lowpass"; f.frequency.value = 2600;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.28, t + 0.012);
+    g.gain.setValueAtTime(0.28, t + Math.max(0.03, dur * 0.6));
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    f.connect(g); g.connect(songBus);
+    var o = actx.createOscillator();
+    o.type = song.lead; o.frequency.value = midiHz(midi); o.detune.value = 5;
+    o.connect(f); o.start(t); o.stop(t + dur + 0.05);
+    var o2 = actx.createOscillator();
+    o2.type = "sine"; o2.frequency.value = midiHz(midi - 12);
+    o2.connect(f); o2.start(t); o2.stop(t + dur + 0.05);
+  } catch (e) {}
+}
+function tickN(t, accent) {
+  if (!actx) return;
+  try {
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = "sine"; o.frequency.value = accent ? 1600 : 1150;
+    g.gain.setValueAtTime(accent ? 0.14 : 0.09, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    o.connect(g); g.connect(songBus);
+    o.start(t); o.stop(t + 0.06);
+  } catch (e) {}
+}
+function blip(freq, dur, type, gainv, delay) {
+  if (!actx) return;
+  try {
+    var t = actx.currentTime + (delay || 0);
+    var o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(gainv || 0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + dur + 0.02);
+  } catch (e) {}
+}
+function sfxHit(j) {
+  blip([1046, 784, 554][j], 0.07, "sine", 0.16);
+  if (j === 0) blip(1568, 0.06, "sine", 0.09, 0.03);
+}
+function sfxMiss() { blip(140, 0.15, "sawtooth", 0.08); }
+function sfxMilestone(c) {
+  var tier = Math.min(6, Math.floor(c / 50));
+  var base = 523.25 * Math.pow(2, tier * 2 / 12);
+  var st = [0, 4, 7, 12];
+  for (var i = 0; i < st.length; i++) blip(base * Math.pow(2, st[i] / 12), 0.09, "triangle", 0.15, i * 0.055);
+}
+function sfxUI() { blip(620, 0.05, "sine", 0.08); }
+function sfxFanfare(grade) {
+  var seq = (grade === "SSS" || grade === "SS" || grade === "S") ? [0, 4, 7, 12, 16] : grade === "A" ? [0, 4, 7] : [0, 3];
+  var base = grade === "C" ? 262 : 392;
+  for (var i = 0; i < seq.length; i++) blip(base * Math.pow(2, seq[i] / 12), 0.14, "triangle", 0.16, i * 0.1);
+}
+
+/* ================= 时钟：一律以 AudioContext.currentTime 为准（无漂移） ================= */
+function songTime() {
+  return (clockPerf ? performance.now() / 1000 : actx.currentTime) - songStart;
+}
+
+/* ================= 音乐事件编排：与谱面同一 beat 网格 ================= */
+function buildEvents() {
+  var ev = [], spb = chart.spb, m, b;
+  var kicks = song.id === "calm" ? [0, 2.5] : song.id === "groove" ? [0, 1, 2, 3] : [0, 1, 1.5, 2, 3, 3.5];
+  for (m = 0; m < song.measures; m++) {
+    var mb = m * 4;
+    for (b = 0; b < kicks.length; b++) ev.push({ t: (mb + kicks[b]) * spb, k: "k" });
+    for (b = 0; b < 2; b++) ev.push({ t: (mb + 1 + b * 2) * spb, k: "s" });
+    for (b = 0; b < 8; b++) ev.push({ t: (mb + b * 0.5) * spb, k: "h", o: b === 7 && song.id !== "calm" });
+    var root = song.bass[m % song.bass.length];
+    if (song.id === "calm") {
+      ev.push({ t: mb * spb, k: "b", m: root, d: spb * 1.8 });
+      ev.push({ t: (mb + 2) * spb, k: "b", m: root + 7, d: spb * 1.8 });
+    } else {
+      for (b = 0; b < 8; b++) {
+        var pm = (b % 4 === 2) ? 12 : (b % 2 === 1 ? 7 : 0);
+        ev.push({ t: (mb + b * 0.5) * spb, k: "b", m: root + pm, d: spb * 0.42 });
+      }
+    }
+  }
+  for (b = 0; b < 4; b++) ev.push({ t: b * spb, k: "c", a: b === 0 });  // 导入节拍器
+  for (var i = 0; i < notes.length; i++) ev.push({ t: notes[i].time, k: "l", m: notes[i].midi, d: notes[i].dur });  // 主旋律 = 谱面（同源）
+  ev.sort(function (a, c) { return a.t - c.t; });
+  return ev;
+}
+
+// 前瞻式音频调度：每 60ms 把未来 0.4s 内的事件排进 AudioContext（时钟对齐，不受渲染帧率影响）
+function pump() {
+  if (state !== "PLAY" || !actx) return;
+  var now = actx.currentTime, horizon = now + 0.4;
+  while (evIdx < events.length) {
+    var e = events[evIdx], at = songStart + e.t;
+    if (at >= horizon) break;
+    evIdx++;
+    if (at < now - 0.03) continue;
+    if (e.k === "k") kick(at);
+    else if (e.k === "s") snare(at);
+    else if (e.k === "h") hat(at, e.o);
+    else if (e.k === "b") bassN(at, e.m, e.d);
+    else if (e.k === "l") leadN(at, e.m, e.d);
+    else if (e.k === "c") tickN(at, e.a);
+  }
+  if (state === "PLAY" && songTime() > songDur + 1.0) finishSong();
+}
+
+/* ================= 一局流程 ================= */
+function startSong(i) {
+  ensureAudio();
+  sfxUI();
+  songIdx = i; song = RT_SONGS[i];
+  chart = RT_buildChart(song);
+  notes = []; laneNotes = [[], [], [], []];
+  var spb = chart.spb, k, l, j;
+  for (k = 0; k < chart.notes.length; k++) {
+    var n = { beat: chart.notes[k].beat, lane: chart.notes[k].lane, midi: chart.notes[k].midi,
+              time: chart.notes[k].beat * spb, hit: 0, dur: spb };
+    notes.push(n); laneNotes[n.lane].push(n);
+  }
+  for (l = 0; l < 4; l++) for (j = 0; j < laneNotes[l].length; j++) {
+    var arr = laneNotes[l];
+    var gap = (j + 1 < arr.length ? arr[j + 1].beat - arr[j].beat : 2);
+    arr[j].dur = Math.min(gap, 1.6) * spb * 0.92;
+  }
+  events = buildEvents();
+  evIdx = 0;
+  score = 0; combo = 0; maxCombo = 0; counts = [0, 0, 0, 0]; comboPop = 0;
+  lanePtr = [0, 0, 0, 0]; lanePressed = [0, 0, 0, 0]; laneGlow = [0, 0, 0, 0]; laneBeam = [0, 0, 0, 0];
+  ripples = []; floats = [];
+  songDur = chart.lengthBeats * spb;
+  clockPerf = false;
+  if (actx) {
+    songBus = actx.createGain(); songBus.gain.value = 1; songBus.connect(musicGain);
+    songStart = actx.currentTime + LEAD;
+  } else {
+    clockPerf = true;
+    songStart = performance.now() / 1000 + LEAD;
+  }
+  state = "PLAY";
+  overlay.style.display = "none";
+  exitBtn.style.display = "block";
+  try {
+    if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK) {
+      window.CrazyGames.SDK.game.gameplayStart();
+    }
+  } catch (e) {}
+  if (schedTimer) clearInterval(schedTimer);
+  schedTimer = setInterval(pump, 60);
+  pump();
+}
+
+function stopSongAudio() {
+  if (schedTimer) { clearInterval(schedTimer); schedTimer = 0; }
+  if (actx && songBus) {
+    try {
+      songBus.gain.setTargetAtTime(0, actx.currentTime, 0.08);
+      var b = songBus;
+      setTimeout(function () { try { b.disconnect(); } catch (e2) {} }, 800);
+    } catch (e) {}
+    songBus = null;
+  }
+}
+
+function accuracyNow() {
+  var total = counts[0] + counts[1] + counts[2] + counts[3];
+  if (!total) return 100;
+  return (RT_SCORES[0] * counts[0] + RT_SCORES[1] * counts[1] + RT_SCORES[2] * counts[2]) / (100 * total) * 100;
+}
+
+function finishSong() {
+  if (state !== "PLAY") return;
+  state = "RESULT";
+  stopSongAudio();
+  try {
+    if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK) {
+      window.CrazyGames.SDK.game.gameplayStop();
+    }
+  } catch (e) {}
+  var acc = accuracyNow();
+  var grade = RT_gradeOf(acc);
+  var key = "rt_best_" + song.id;
+  var prev = null;
+  try { prev = JSON.parse(storeGet(key) || "null"); } catch (e) { prev = null; }
+  var isNew = !prev || score > prev.s;
+  if (isNew) storeSet(key, JSON.stringify({ s: score, g: grade, a: Math.round(acc * 10) / 10, c: maxCombo }));
+  fillResult(grade, acc, isNew);
+  exitBtn.style.display = "none";
+  menuPanel.style.display = "none";
+  resultPanel.style.display = "block";
+  overlay.style.display = "flex";
+  sfxFanfare(grade);
+  try {
+    if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK && (grade === "SSS" || grade === "SS" || grade === "S" || grade === "A")) {
+      window.CrazyGames.SDK.game.happytime();
+    }
+  } catch (e) {}
+}
+
+function quitToMenu() {
+  if (state === "PLAY") {
+    stopSongAudio();
+    try {
+      if (window.__portal === "crazygames" && window.CrazyGames && window.CrazyGames.SDK) {
+        window.CrazyGames.SDK.game.gameplayStop();
+      }
+    } catch (e) {}
+  }
+  showMenu();
+}
+
+function showMenu() {
+  state = "MENU";
+  stopSongAudio();
+  exitBtn.style.display = "none";
+  resultPanel.style.display = "none";
+  menuPanel.style.display = "block";
+  overlay.style.display = "flex";
+  buildMenu();
+}
+
+function buildMenu() {
+  var list = document.getElementById("songList");
+  list.innerHTML = "";
+  for (var i = 0; i < RT_SONGS.length; i++) {
+    (function (i) {
+      var s = RT_SONGS[i];
+      var b = document.createElement("button");
+      b.className = "song";
+      b.style.borderColor = LANE_COLORS[i];
+      var best = null;
+      try { best = JSON.parse(storeGet("rt_best_" + s.id) || "null"); } catch (e) { best = null; }
+      b.innerHTML = '<span class="sName">' + s.name + "</span>" +
+        '<span class="sMeta">' + s.bpm + " BPM &middot; " + s.diff + "</span>" +
+        '<span class="sBest">' + (best ? "BEST " + best.s + " &middot; " + best.g : "NOT PLAYED") + "</span>";
+      b.addEventListener("click", function () { startSong(i); });
+      list.appendChild(b);
+    })(i);
+  }
+}
+
+function fillResult(grade, acc, isNew) {
+  var g = document.getElementById("rGrade");
+  g.textContent = grade;
+  var col = GRADE_COLORS[grade] || "#fff";
+  g.style.color = col;
+  g.style.textShadow = "0 0 26px " + col;
+  document.getElementById("rNew").style.display = isNew ? "block" : "none";
+  document.getElementById("rScore").textContent = score;
+  var rows = [["PERFECT", counts[0]], ["GREAT", counts[1]], ["GOOD", counts[2]], ["MISS", counts[3]],
+              ["MAX COMBO", maxCombo], ["ACCURACY", acc.toFixed(1) + "%"]];
+  var html = "";
+  for (var i = 0; i < rows.length; i++) html += '<div class="cell"><span>' + rows[i][0] + "</span><b>" + rows[i][1] + "</b></div>";
+  document.getElementById("rGrid").innerHTML = html;
+}
+
+/* ================= 判定 ================= */
+function press(l) {
+  if (state === "PAUSED") { resumeFromPause(); return; }
+  if (state !== "PLAY") return;
+  lanePressed[l] = Math.min(2, lanePressed[l] + 1);
+  laneGlow[l] = 1;
+  var t = songTime();
+  var arr = laneNotes[l], best = -1, bestAbs = 1e9, i, n, d, a;
+  for (i = lanePtr[l]; i < arr.length; i++) {
+    n = arr[i];
+    if (n.hit) continue;
+    d = (t - n.time) * 1000;
+    if (d < -RT_WINDOWS[2]) break;          // 太早，后面的音符更早
+    if (d > RT_WINDOWS[2]) continue;        // 已过窗，等待 MISS 回收
+    a = d < 0 ? -d : d;
+    if (a < bestAbs) { bestAbs = a; best = i; }
+  }
+  if (best < 0) { blip(190, 0.04, "square", 0.035); return; }  // 空按：轻反馈不惩罚
+  n = arr[best];
+  var j = RT_judgeOf(bestAbs);
+  n.hit = j + 1;
+  counts[j]++;
+  combo++;
+  if (combo > maxCombo) maxCombo = combo;
+  score += RT_SCORES[j];
+  comboPop = 1;
+  laneBeam[l] = 1; laneGlow[l] = 1;
+  ripples.push({ x: l * LANE_W + LANE_W / 2, y: HIT_Y, r: 10, life: 1, color: j === 0 ? "#ffffff" : LANE_COLORS[l] });
+  floats.push({ x: l * LANE_W + LANE_W / 2, y: HIT_Y - 46, txt: ["PERFECT", "GREAT", "GOOD"][j], life: 0.8,
+                color: ["#ffe9a8", "#b7ffd9", "#9fd4ff"][j] });
+  sfxHit(j);
+  if (combo % 50 === 0) sfxMilestone(combo);   // 每 50 连击音效升调
+  while (lanePtr[l] < arr.length && arr[lanePtr[l]].hit) lanePtr[l]++;
+}
+
+function resumeFromPause() {
+  if (state !== "PAUSED") return;
+  try { actx.resume(); } catch (e) {}
+  state = "PLAY";
+}
+
+/* ================= 逐帧更新 ================= */
+function update(dt) {
+  var l;
+  for (l = 0; l < 4; l++) {
+    laneGlow[l] = Math.max(0, laneGlow[l] - dt * 3.5);
+    laneBeam[l] = Math.max(0, laneBeam[l] - dt * 2.2);
+  }
+  comboPop = Math.max(0, comboPop - dt * 3);
+  var i;
+  for (i = ripples.length - 1; i >= 0; i--) {
+    var r = ripples[i];
+    r.life -= dt * 2.2; r.r += dt * 260;
+    if (r.life <= 0) ripples.splice(i, 1);
+  }
+  for (i = floats.length - 1; i >= 0; i--) {
+    var fl = floats[i];
+    fl.life -= dt; fl.y -= 55 * dt;
+    if (fl.life <= 0) floats.splice(i, 1);
+  }
+  if (state !== "PLAY") return;
+  var t = songTime();
+  for (l = 0; l < 4; l++) {
+    var arr = laneNotes[l];
+    while (lanePtr[l] < arr.length) {
+      var n = arr[lanePtr[l]];
+      if (n.time >= t - RT_WINDOWS[2] / 1000) break;
+      if (!n.hit) {
+        n.hit = 4; counts[3]++; combo = 0;
+        floats.push({ x: l * LANE_W + LANE_W / 2, y: HIT_Y - 46, txt: "MISS", life: 0.8, color: "#ff5c7a" });
+        sfxMiss();
+      }
+      lanePtr[l]++;
+    }
+  }
+  if (t > songDur + 1.0) finishSong();
+}
+
+/* ================= 渲染 ================= */
+function hexA(hex, a) {
+  var n = parseInt(hex.slice(1), 16);
+  return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a.toFixed(3) + ")";
+}
+function roundRect(c, x, y, w, h, rad) {
+  c.beginPath();
+  c.moveTo(x + rad, y);
+  c.arcTo(x + w, y, x + w, y + h, rad);
+  c.arcTo(x + w, y + h, x, y + h, rad);
+  c.arcTo(x, y + h, x, y, rad);
+  c.arcTo(x, y, x + w, y, rad);
+  c.closePath();
+}
+function pxPerSec() { return (HIT_Y + 40) / song.approach; }
+
+function drawSpectrum(ts) {
+  var bars = 24, bw = W / bars, i, v;
+  var live = false;
+  if (analyser && specData) {
+    try { analyser.getByteFrequencyData(specData); live = true; } catch (e) {}
+  }
+  for (i = 0; i < bars; i++) {
+    if (live) v = Math.max(specData[i + 2], specData[i * 2]) / 255;
+    else v = 0.06 + 0.05 * Math.sin(ts * 2 + i * 0.7);
+    var h = Math.max(4, v * 200);
+    ctx.fillStyle = hexA(LANE_COLORS[i % 4], 0.08 + v * 0.12);
+    ctx.fillRect(i * bw + 2, H - h, bw - 4, h);
+  }
+}
+
+function drawTrack(t) {
+  // 节拍网格线（谱面与音乐同网格的可视化）
+  var spb = chart.spb, b = Math.max(0, Math.ceil(t / spb));
+  var pps = pxPerSec();
+  for (; b * spb < t + song.approach + 0.2; b++) {
+    var y = HIT_Y - (b * spb - t) * pps;
+    if (y < -10 || y > HIT_Y) continue;
+    ctx.fillStyle = (b % 4 === 0) ? "rgba(140,150,255,.12)" : "rgba(140,150,255,.05)";
+    ctx.fillRect(0, y, W, 1);
+  }
+  // 音符
+  for (var i = 0; i < notes.length; i++) {
+    var n = notes[i];
+    if (n.hit) continue;
+    var ny = HIT_Y - (n.time - t) * pps;
+    if (ny < -30 || ny > H + 30) continue;
+    var x = n.lane * LANE_W + 12, w = LANE_W - 24;
+    var col = LANE_COLORS[n.lane];
+    ctx.shadowColor = col; ctx.shadowBlur = 16;
+    var g = ctx.createLinearGradient(0, ny - 15, 0, ny + 15);
+    g.addColorStop(0, col); g.addColorStop(1, "#141428");
+    ctx.fillStyle = g;
+    roundRect(ctx, x, ny - 15, w, 30, 9); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    roundRect(ctx, x + w / 2 - 14, ny - 4, 28, 8, 4); ctx.fill();
+  }
+}
+
+function drawReceptors(t) {
+  // 判定线光柱底条
+  ctx.shadowColor = "#22e0ff"; ctx.shadowBlur = 14;
+  ctx.fillStyle = "rgba(220,240,255,.6)";
+  ctx.fillRect(8, HIT_Y - 1.5, W - 16, 3);
+  ctx.shadowBlur = 0;
+  // 命中光柱（击打后向上渐隐）
+  for (var l = 0; l < 4; l++) {
+    if (laneBeam[l] > 0.01) {
+      var g = ctx.createLinearGradient(0, HIT_Y, 0, HIT_Y - 260);
+      g.addColorStop(0, hexA(LANE_COLORS[l], 0.4 * laneBeam[l]));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(l * LANE_W + 6, HIT_Y - 260, LANE_W - 12, 260);
+    }
+  }
+  // 接收器
+  for (var l2 = 0; l2 < 4; l2++) {
+    var x = l2 * LANE_W + 10, w = LANE_W - 20;
+    var col = LANE_COLORS[l2];
+    var glow = Math.max(laneGlow[l2], lanePressed[l2] ? 0.9 : 0);
+    ctx.strokeStyle = hexA(col, 0.35 + glow * 0.6);
+    ctx.lineWidth = 2;
+    if (glow > 0.05) { ctx.shadowColor = col; ctx.shadowBlur = 18 * glow; }
+    ctx.fillStyle = hexA(col, 0.08 + glow * 0.22);
+    roundRect(ctx, x, HIT_Y - 16, w, 32, 10); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.lineWidth = 1;
+    ctx.fillStyle = "#8a8ac0";
+    ctx.font = "800 12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(KEYS[l2], l2 * LANE_W + LANE_W / 2, HIT_Y + 40);
+  }
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawHUD(t) {
+  var pr = Math.max(0, Math.min(1, songDur ? t / songDur : 0));
+  ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.fillRect(0, 0, W, 3);
+  ctx.fillStyle = "#22e0ff"; ctx.fillRect(0, 0, W * pr, 3);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#8a8ac0"; ctx.font = "700 10px sans-serif";
+  ctx.fillText("SCORE", 14, 30);
+  ctx.fillStyle = "#fff"; ctx.font = "800 24px sans-serif";
+  ctx.fillText(String(score), 14, 54);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#8a8ac0"; ctx.font = "700 10px sans-serif";
+  ctx.fillText("ACCURACY", W - 112, 30);
+  ctx.fillStyle = "#fff"; ctx.font = "800 18px sans-serif";
+  ctx.fillText(accuracyNow().toFixed(1) + "%", W - 112, 50);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#9a9ac8"; ctx.font = "700 11px sans-serif";
+  ctx.fillText(song.name.toUpperCase() + " \u00B7 " + song.diff + " \u00B7 " + song.bpm + " BPM", W / 2, 72);
+  if (combo >= 2) {
+    var sc = 1 + comboPop * 0.3;
+    ctx.save();
+    ctx.translate(W / 2, 400); ctx.scale(sc, sc);
+    ctx.fillStyle = "rgba(255,255,255,.6)"; ctx.font = "700 11px sans-serif";
+    ctx.fillText("COMBO", 0, -32);
+    ctx.fillStyle = combo >= 50 ? "#ffd76a" : "#fff";
+    ctx.shadowColor = combo >= 50 ? "#ffd76a" : "#7c8cff"; ctx.shadowBlur = 16;
+    ctx.font = "900 48px sans-serif";
+    ctx.fillText(String(combo), 0, 12);
+    ctx.restore();
+  }
+  if (t < 0) {
+    ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.font = "900 34px sans-serif";
+    ctx.shadowColor = "#22e0ff"; ctx.shadowBlur = 20;
+    ctx.fillText("GET READY", W / 2, 360);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#8a8ac0"; ctx.font = "700 12px sans-serif";
+    ctx.fillText("hit the beats on the line", W / 2, 386);
+  } else if (t < 4 * chart.spb) {
+    var c = Math.ceil(4 - t / chart.spb);
+    ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.font = "900 56px sans-serif";
+    ctx.fillText(String(c), W / 2, 370);
+  }
+  if (state === "PAUSED") {
+    ctx.fillStyle = "rgba(5,5,14,.6)"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#fff"; ctx.font = "900 28px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("PAUSED", W / 2, 350);
+    ctx.fillStyle = "#9a9ac0"; ctx.font = "700 13px sans-serif";
+    ctx.fillText("tap anywhere to resume", W / 2, 378);
+  }
+}
+
+function render(ts) {
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0a0a18"); bg.addColorStop(1, "#05050c");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  drawSpectrum(ts);
+  var playing = (state === "PLAY" || state === "PAUSED" || state === "RESULT") && chart;
+  var t = playing ? songTime() : -99;
+  // 轨道底部晕色
+  for (var l = 0; l < 4; l++) {
+    var g = ctx.createLinearGradient(0, HIT_Y - 300, 0, HIT_Y);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, hexA(LANE_COLORS[l], 0.05 + laneGlow[l] * 0.1));
+    ctx.fillStyle = g;
+    ctx.fillRect(l * LANE_W, HIT_Y - 300, LANE_W, 300);
+  }
+  if (playing) drawTrack(t);
+  // 分轨线
+  for (var s2 = 0; s2 <= LANES; s2++) {
+    ctx.fillStyle = "rgba(120,130,255,.10)";
+    ctx.fillRect(s2 * LANE_W - 1, 0, 2, H);
+  }
+  drawReceptors(t);
+  // 波纹
+  for (var i = 0; i < ripples.length; i++) {
+    var r = ripples[i];
+    ctx.strokeStyle = hexA(r.color, Math.max(0, r.life) * 0.7);
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.lineWidth = 1;
+  // 判定浮字
+  ctx.textAlign = "center"; ctx.font = "800 14px sans-serif";
+  for (var f = 0; f < floats.length; f++) {
+    var fl = floats[f];
+    ctx.globalAlpha = Math.max(0, Math.min(1, fl.life / 0.4));
+    ctx.fillStyle = fl.color;
+    ctx.fillText(fl.txt, fl.x, fl.y);
+  }
+  ctx.globalAlpha = 1;
+  if (playing) drawHUD(t);
+  ctx.fillStyle = "#3c3c5e"; ctx.font = "700 10px sans-serif"; ctx.textAlign = "center";
+  ctx.fillText("RHYTHM TAP \u00B7 A FREE HTML5 RHYTHM GAME", W / 2, H - 8);
+  ctx.textAlign = "left";
+}
+
+var last = 0;
+function frame(tms) {
+  var dt = Math.min((tms - last) / 1000 || 0, 0.05);
+  last = tms;
+  if (state === "PLAY") pump();
+  update(dt);
+  render(tms / 1000);
+  requestAnimationFrame(frame);
+}
+
+/* ================= 输入：触控 4 分区 + DFJK / 方向键 ================= */
+var touchLane = {};
+function laneFromX(clientX) {
+  var rect = canvas.getBoundingClientRect();
+  var x = (clientX - rect.left) / rect.width * W;
+  var l = Math.floor(x / LANE_W);
+  return Math.max(0, Math.min(LANES - 1, l));
+}
+function pointerPress(l) { ensureAudio(); press(l); }
+
+canvas.addEventListener("mousedown", function (e) { pointerPress(laneFromX(e.clientX)); });
+window.addEventListener("mouseup", function () { lanePressed = [0, 0, 0, 0]; });
+canvas.addEventListener("touchstart", function (e) {
+  e.preventDefault();
+  ensureAudio();
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var tc = e.changedTouches[i];
+    var l = laneFromX(tc.clientX);
+    touchLane[tc.identifier] = l;
+    press(l);
+  }
+}, { passive: false });
+canvas.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
+function touchEnd(e) {
+  e.preventDefault();
+  for (var i = 0; i < e.changedTouches.length; i++) {
+    var id = e.changedTouches[i].identifier;
+    var l = touchLane[id];
+    if (l !== undefined) {
+      lanePressed[l] = Math.max(0, lanePressed[l] - 1);
+      delete touchLane[id];
+    }
+  }
+}
+canvas.addEventListener("touchend", touchEnd, { passive: false });
+canvas.addEventListener("touchcancel", touchEnd, { passive: false });
+
+var KEYMAP = { KeyD: 0, KeyF: 1, KeyJ: 2, KeyK: 3, ArrowLeft: 0, ArrowDown: 1, ArrowUp: 2, ArrowRight: 3 };
+document.addEventListener("keydown", function (e) {
+  if (e.code === "KeyM") { ensureAudio(); toggleMute(); return; }
+  if (e.code === "Escape") { if (state === "PLAY" || state === "PAUSED") quitToMenu(); else if (state === "RESULT") showMenu(); return; }
+  if (state === "RESULT" && (e.code === "Enter" || e.code === "Space")) { e.preventDefault(); startSong(songIdx); return; }
+  if (state === "MENU" && e.code.indexOf("Digit") === 0) {
+    var di = parseInt(e.code.slice(5), 10) - 1;
+    if (di >= 0 && di < RT_SONGS.length) startSong(di);
+    return;
+  }
+  var l = KEYMAP[e.code];
+  if (l === undefined) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  pointerPress(l);
+});
+document.addEventListener("keyup", function (e) {
+  var l = KEYMAP[e.code];
+  if (l === undefined) return;
+  lanePressed[l] = 0;
+});
+
+/* ================= 静音（音乐/音效同一上下文，总闸） ================= */
+function applyMute() {
+  muteBtn.textContent = muted ? "SOUND OFF" : "SOUND ON";
+  muteBtn.style.opacity = muted ? "0.55" : "1";
+  if (actx && master) {
+    try { master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.02); } catch (e) {}
+  }
+}
+function toggleMute() {
+  muted = !muted;
+  storeSet("rt_muted", muted ? "1" : "0");
+  applyMute();
+}
+muteBtn.addEventListener("click", function (e) { e.stopPropagation(); ensureAudio(); toggleMute(); });
+document.getElementById("retryBtn").addEventListener("click", function (e) { e.stopPropagation(); startSong(songIdx); });
+document.getElementById("menuBtn").addEventListener("click", function (e) { e.stopPropagation(); sfxUI(); showMenu(); });
+exitBtn.addEventListener("click", function (e) { e.stopPropagation(); quitToMenu(); });
+
+/* ================= 后台自动暂停：挂起音频时钟，全场景一致冻结 ================= */
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden && state === "PLAY" && actx) {
+    try { actx.suspend(); } catch (e) {}
+    state = "PAUSED";
+  }
+});
+
+/* ================= 启动 ================= */
+buildMenu();
+applyMute();
+requestAnimationFrame(frame);
+
+// 调试/测试钩子（不影响游戏逻辑）
+window.__rt = {
+  RT_SONGS: RT_SONGS, buildChart: RT_buildChart, judgeOf: RT_judgeOf, gradeOf: RT_gradeOf,
+  startSong: startSong, press: press,
+  get state() { return state; },
+  get score() { return score; },
+  get combo() { return combo; },
+  get maxCombo() { return maxCombo; },
+  get counts() { return counts; },
+  get songTime() { return songTime(); },
+  get laneNotes() { return laneNotes; },
+  get notes() { return notes; },
+  get actx() { return actx; },
+  get muted() { return muted; }
+};
+</script>
+</body>
+</html>
